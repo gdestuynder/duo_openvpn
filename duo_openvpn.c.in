@@ -1,9 +1,11 @@
+#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <unistd.h>
 #include <syslog.h>
+#include <unistd.h>
 
 #include "openvpn-plugin.h"
 
@@ -50,6 +52,11 @@ auth_user_pass_verify(struct context *ctx, const char *args[], const char *envp[
 	if (!control || !username || !password || !ipaddr) {
 		return OPENVPN_PLUGIN_FUNC_ERROR;
 	}
+
+        if (signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
+                syslog(LOG_ERR|LOG_AUTH, "Unable to ignore SIGCHLD: %s", strerror(errno));
+                return OPENVPN_PLUGIN_FUNC_ERROR;
+        }
 
 	pid = fork();
 	if (pid < 0) {

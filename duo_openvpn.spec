@@ -1,5 +1,5 @@
 %define name	duo_openvpn
-%define version	0.2
+%define version	0.3
 %define release 1
 %define prefix	/usr
 
@@ -59,6 +59,9 @@ ln -s %{prefix}/share/duo/%{name}.py %{mybuilddir}%{prefix}/bin/%{name}
 %attr(0644,root,root)%{prefix}/share/duo/https_wrapper.py
 
 %changelog
+* Mon Aug 27 2012 Jan Schaumann <jschauma@etsy.com>
+- ignore SIGCHLD to avoid one zombie per authentication
+
 * Tue Jul 17 2012 Jan Schaumann <jschauma@etsy.com>
 - install two modules, one for 'composite' password, one regular
 
