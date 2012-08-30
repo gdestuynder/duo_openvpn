@@ -1,5 +1,5 @@
 %define name	duo_openvpn
-%define version	0.3
+%define version	0.4
 %define release 1
 %define prefix	/usr
 
@@ -59,6 +59,10 @@ ln -s %{prefix}/share/duo/%{name}.py %{mybuilddir}%{prefix}/bin/%{name}
 %attr(0644,root,root)%{prefix}/share/duo/https_wrapper.py
 
 %changelog
+* Thu Aug 30 2012 Jan Schaumann <jschauma@etsy.com>
+- allow fallback to another form of authentication if connections to Duo's
+  servers fail
+
 * Mon Aug 27 2012 Jan Schaumann <jschauma@etsy.com>
 - ignore SIGCHLD to avoid one zombie per authentication
 

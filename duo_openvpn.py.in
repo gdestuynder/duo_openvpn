@@ -5,7 +5,7 @@
 # Copyright 2011 Duo Security, Inc.
 #
 
-import os, sys, urllib, hashlib, hmac, base64, json, syslog
+import os, sys, urllib, hashlib, hmac, base64, json, syslog, socket, subprocess
 from https_wrapper import CertValidatingHTTPSConnection
 
 API_RESULT_AUTH   = 'auth'
@@ -14,6 +14,18 @@ API_RESULT_DENY   = 'deny'
 API_RESULT_ENROLL = 'enroll'
 
 ca_certs = '__PREFIX__/share/duo/ca_certs.pem';
+
+# Run the given fallback command; if it returns 0, then authentication was
+# successful
+def fallbackAuth(fallback, control):
+    log("Trying fallback: %s" % fallback)
+    try:
+        os.execl(fallback)
+	# NOTREACHED
+    except Exception, e:
+        log(str(e))
+        failure(control)
+
 
 def canonicalize(method, host, uri, params):
     canon = [method.upper(), host.lower(), uri]
@@ -154,9 +166,15 @@ def auth(ikey, skey, host, control, username, password, ipaddr):
 
 def main():
     control = os.environ.get('control')
+
+    # The next two variables are a bit confusing:
+    # - 'username' is actually the 'common name' from the cert
     username = os.environ.get('username')
+    # - 'user_provided_username' is from the dialog
+    user_provided_username = os.environ.get('user_provided_username')
     password = os.environ.get('password')
     ipaddr = os.environ.get('ipaddr', '0.0.0.0')
+    fallback = os.environ.get('fallback')
 
     # A 'composite' password is one that combines a single password string
     # for multiple authentication plugins, for example ldap authentication
@@ -184,12 +202,14 @@ def main():
 
     try:
         preauth(ikey, skey, host, control, username)
-    except Exception, e:
-        log(str(e))
-        failure(control)
-
-    try:
         auth(ikey, skey, host, control, username, password, ipaddr)
+    except (RuntimeError, socket.gaierror, socket.error), e:
+        # any failure here indicates a problem with Duo, so try fallback, if any
+        log(str(e))
+        if fallback:
+            fallbackAuth(fallback, control)
+        else:
+            failure(control)
     except Exception, e:
         log(str(e))
         failure(control)

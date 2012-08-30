@@ -41,11 +41,12 @@ static int
 auth_user_pass_verify(struct context *ctx, const char *args[], const char *envp[])
 {
 	int pid;
-	const char *control, *username, *password, *ipaddr;
+	const char *control, *user_provided_username, *username, *password, *ipaddr;
 	char *argv[] = { DUO_SCRIPT_PATH, NULL };
 
 	control = get_env("auth_control_file", envp);
 	username = get_env("common_name", envp);
+	user_provided_username = get_env("username", envp);
 	password = get_env("password", envp);
 	ipaddr = get_env("untrusted_ip", envp);
 
@@ -74,6 +75,7 @@ auth_user_pass_verify(struct context *ctx, const char *args[], const char *envp[
 		setenv("username", username, 1);
 		setenv("password", password, 1);
 		setenv("ipaddr", ipaddr, 1);
+		setenv("user_provided_username", user_provided_username, 1);
 
 #ifdef COMPOSITE_PASSWORD
 		setenv("composite_password", "true", 1);
@@ -109,6 +111,11 @@ openvpn_plugin_open_v2(unsigned int *type_mask, const char *argv[], const char *
 		ctx->ikey = strdup(argv[1]);
 		ctx->skey = strdup(argv[2]);
 		ctx->host = strdup(argv[3]);
+	}
+
+	if (argv[4]) {
+		syslog(LOG_NOTICE|LOG_AUTH, "fallback: %s", argv[4]);
+		setenv("fallback", argv[4], 1);
 	}
 
 	*type_mask = OPENVPN_PLUGIN_MASK(OPENVPN_PLUGIN_AUTH_USER_PASS_VERIFY);
