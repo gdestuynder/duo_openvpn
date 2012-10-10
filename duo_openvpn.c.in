@@ -41,16 +41,16 @@ static int
 auth_user_pass_verify(struct context *ctx, const char *args[], const char *envp[])
 {
 	int pid;
-	const char *control, *user_provided_username, *username, *password, *ipaddr;
+	const char *control, *common_name, *username, *password, *ipaddr;
 	char *argv[] = { DUO_SCRIPT_PATH, NULL };
 
 	control = get_env("auth_control_file", envp);
-	username = get_env("common_name", envp);
-	user_provided_username = get_env("username", envp);
+	common_name = get_env("common_name", envp);
+	username = get_env("username", envp);
 	password = get_env("password", envp);
 	ipaddr = get_env("untrusted_ip", envp);
 
-	if (!control || !username || !password || !ipaddr) {
+	if (!control || !common_name || !password || !ipaddr) {
 		return OPENVPN_PLUGIN_FUNC_ERROR;
 	}
 
@@ -75,7 +75,7 @@ auth_user_pass_verify(struct context *ctx, const char *args[], const char *envp[
 		setenv("username", username, 1);
 		setenv("password", password, 1);
 		setenv("ipaddr", ipaddr, 1);
-		setenv("user_provided_username", user_provided_username, 1);
+		setenv("common_name", common_name, 1);
 
 #ifdef COMPOSITE_PASSWORD
 		setenv("composite_password", "true", 1);
