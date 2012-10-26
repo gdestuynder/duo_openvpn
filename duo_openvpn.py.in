@@ -72,19 +72,19 @@ def cached(username, ipaddress):
     return found
 
 
-# Update CACHE_FILE to ensure exactly one line containing the given
-# username exists.  Note that this implies that we do not allow multiple
-# connections from different source IPs for a single user.
+# Update CACHE_FILE to add or remove a user's cache info.
 #
 # Since we may call this function either before or after Duo
 # authentication, we have to actually parse the file again.  That is, we
 # cannot do this work in 'cache' above.
-def updateCache(username, ipaddress):
+def updateCache(username, ipaddress, action='add'):
     log("Updating cache for '%s,%s'\n" % (username, ipaddress))
     f = None
     now = int(time.time())
     newline = "%s,%s,%s\n" % (username, ipaddress, str(now))
-    lines = [ newline ]
+    lines = []
+    if action == 'add':
+        lines.append(newline)
 
     if os.path.exists(CACHE_FILE):
         try:
@@ -186,6 +186,10 @@ def failure(control):
     f = open(control, 'w')
     f.write('0')
     f.close()
+
+    common_name = os.environ.get('username')
+    ipaddr = os.environ.get('ipaddr', '0.0.0.0')
+    updateCache(common_name, ipaddr, 'delete')
 
     sys.exit(1)
 
