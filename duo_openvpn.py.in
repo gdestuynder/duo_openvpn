@@ -4,8 +4,11 @@
 # Duo OpenVPN v1
 # Copyright 2011 Duo Security, Inc.
 #
+# Various modifications by Jan Schaumann <jschauma@etsy.com>.
+#
 
 import os, sys, urllib, hashlib, hmac, base64, json, syslog, socket, subprocess
+import tempfile, time
 from https_wrapper import CertValidatingHTTPSConnection
 
 API_RESULT_AUTH   = 'auth'
@@ -13,7 +16,16 @@ API_RESULT_ALLOW  = 'allow'
 API_RESULT_DENY   = 'deny'
 API_RESULT_ENROLL = 'enroll'
 
-ca_certs = '__PREFIX__/share/duo/ca_certs.pem';
+# Number of seconds for which we allow a user/source-IP pair to be cached
+# and not require re-authentication.
+#
+# Currently: 15 minutes
+CACHE_WINDOW = 15 * 60
+
+# File containing user,ip,timestamp tuples
+CACHE_FILE = '/var/tmp/duo_cache'
+
+ca_certs = '__PREFIX__/share/duo/ca_certs.pem'
 
 # Run the given fallback command; if it returns 0, then authentication was
 # successful
@@ -25,6 +37,81 @@ def fallbackAuth(fallback, control):
     except Exception, e:
         log(str(e))
         failure(control)
+
+# Check if the given user/ip pair has been seen in the last CACHE_WINDOW
+# seconds.  More specifically, we check for the existence of a
+# user/ip/timestamp in the CACHE_FILE, then compare the timestamp to the
+# current time.
+#
+# Returns true or false.
+def cached(username, ipaddress):
+    f = None
+    n = 0
+    found = False
+    now = int(time.time())
+    newline = "%s,%s,%s\n" % (username, ipaddress, str(now))
+
+    if os.path.exists(CACHE_FILE):
+        try:
+            f = open(CACHE_FILE, "r")
+            for line in f.readlines():
+                n += 1
+                (user, ip, ts) = line.split(",")
+                if (user == username) and (ip == ipaddress):
+                    if ((now - int(ts)) < CACHE_WINDOW):
+                        found = True
+            f.close()
+
+        except (OSError, IOError), e:
+            log("Unable to read %s: %s\n" % (CACHE_FILE, os.strerror(e.errno)))
+            return False
+        except ValueError, e:
+            log("Illegal format in %s line %d\n" % (CACHE_FILE, n))
+            return False
+
+    return found
+
+
+# Update CACHE_FILE to ensure exactly one line containing the given
+# username exists.  Note that this implies that we do not allow multiple
+# connections from different source IPs for a single user.
+#
+# Since we may call this function either before or after Duo
+# authentication, we have to actually parse the file again.  That is, we
+# cannot do this work in 'cache' above.
+def updateCache(username, ipaddress):
+    log("Updating cache for '%s,%s'\n" % (username, ipaddress))
+    f = None
+    now = int(time.time())
+    newline = "%s,%s,%s\n" % (username, ipaddress, str(now))
+    lines = [ newline ]
+
+    if os.path.exists(CACHE_FILE):
+        try:
+            f = open(CACHE_FILE, "r")
+            for line in f.readlines():
+                (user, ip, ts) = line.split(",")
+                if (user != username):
+                    lines.append(line)
+            f.close()
+
+        except (OSError, IOError), e:
+            log("Unable to read %s: %s\n" % (CACHE_FILE, os.strerror(e.errno)))
+            return False
+
+    try:
+        tmpf = tempfile.NamedTemporaryFile(delete=False)
+        tmpf.write("".join(lines))
+        tmpf.close()
+    except OSError, e:
+        log("Unable to create temporary file: %s\n" % os.strerror(e.errno))
+        return False
+
+    try:
+        os.rename(tmpf.name, CACHE_FILE)
+    except OSError, e:
+        log("Unable to rename %s to %s: %s\n" % (tmpf.name, CACHE_FILE, os.strerror(e.errno)))
+
 
 
 def canonicalize(method, host, uri, params):
@@ -86,6 +173,10 @@ def success(control):
     f = open(control, 'w')
     f.write('1')
     f.close()
+
+    common_name = os.environ.get('common_name')
+    ipaddr = os.environ.get('ipaddr', '0.0.0.0')
+    updateCache(common_name, ipaddr)
 
     sys.exit(0)
 
@@ -198,6 +289,11 @@ def main():
     if not ikey or not skey or not host:
         log('required ikey/skey/host configuration parameters not found')
         failure(control)
+
+    if cached(common_name, ipaddr):
+        log("'%s,%s' found in cache, avoiding Duo authentication\n" % (common_name, ipaddr))
+        success(control)
+        # NOTREACHED
 
     try:
         preauth(ikey, skey, host, control, common_name)

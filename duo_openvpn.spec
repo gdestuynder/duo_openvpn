@@ -1,5 +1,5 @@
 %define name	duo_openvpn
-%define version	0.4.1
+%define version	0.5.0
 %define release 1
 %define prefix	/usr
 
@@ -59,6 +59,13 @@ ln -s %{prefix}/share/duo/%{name}.py %{mybuilddir}%{prefix}/bin/%{name}
 %attr(0644,root,root)%{prefix}/share/duo/https_wrapper.py
 
 %changelog
+* Fri Oct 10 2012 Jan Schaumann <jschauma@etsy.com>
+- allow the plugin to cache username,IP pairs for a certain time without
+  re-authenticating with Duo; this allows connections from particularly
+  flakey networks to reconnect seemlessly without user interactions;
+  NOTE: this explicitly circumvents the authentication mechanism!  Only
+  use this if you know what you are doing!
+
 * Wed Oct 10 2012 Jan Schaumann <jschauma@etsy.com>
 - rename some variable to be less confusing; no functional change
 
