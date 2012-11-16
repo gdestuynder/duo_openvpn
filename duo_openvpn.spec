@@ -1,5 +1,5 @@
 %define name	duo_openvpn
-%define version	0.5.0
+%define version	0.5.1
 %define release 1
 %define prefix	/usr
 
@@ -59,6 +59,9 @@ ln -s %{prefix}/share/duo/%{name}.py %{mybuilddir}%{prefix}/bin/%{name}
 %attr(0644,root,root)%{prefix}/share/duo/https_wrapper.py
 
 %changelog
+* Fri Nov 16 2012 Jan Schaumann <jschauma@etsy.com>
+- bump cache to 8 days, but do not refresh
+
 * Fri Oct 10 2012 Jan Schaumann <jschauma@etsy.com>
 - allow the plugin to cache username,IP pairs for a certain time without
   re-authenticating with Duo; this allows connections from particularly

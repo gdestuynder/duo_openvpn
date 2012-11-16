@@ -19,8 +19,13 @@ API_RESULT_ENROLL = 'enroll'
 # Number of seconds for which we allow a user/source-IP pair to be cached
 # and not require re-authentication.
 #
-# Currently: 15 minutes
-CACHE_WINDOW = 15 * 60
+# Currently: 8 days
+# Note: this implements an explicit loophole, turning this module into a
+# one-factor authentication module for the duration of CACHE_WINDOW.  This
+# significantly reduces the overall security of the VPN.
+#
+# Please only use this if you know what you are doing.
+CACHE_WINDOW = 60 * 60 * 24 * 8
 
 # File containing user,ip,timestamp tuples
 CACHE_FILE = '/var/tmp/duo_cache'
@@ -39,9 +44,17 @@ def fallbackAuth(fallback, control):
         failure(control)
 
 # Check if the given user/ip pair has been seen in the last CACHE_WINDOW
-# seconds.  More specifically, we check for the existence of a
-# user/ip/timestamp in the CACHE_FILE, then compare the timestamp to the
-# current time.
+# seconds.  More specifically, we check for the existence of
+# user/ip/timestamp data in the CACHE_FILE, then compare the
+# both timestamps to the current time.
+#
+# The timestamp indicates the last time the client performed a full
+# authentication handshake, and it is written only when Duo authentication
+# has successfully performed.
+#
+# If a client re-connects from the given IP within CACHE_WINDOW, then we
+# return true, but do NOT update the timestamp.  Otherwise, we return
+# false.
 #
 # Returns true or false.
 def cached(username, ipaddress):
@@ -49,7 +62,6 @@ def cached(username, ipaddress):
     n = 0
     found = False
     now = int(time.time())
-    newline = "%s,%s,%s\n" % (username, ipaddress, str(now))
 
     if os.path.exists(CACHE_FILE):
         try:
@@ -72,7 +84,9 @@ def cached(username, ipaddress):
     return found
 
 
-# Update CACHE_FILE to add or remove a user's cache info.
+# Update CACHE_FILE to add or remove a user's cache info.  Note that this
+# implies that we do not allow multiple connections from different source
+# IPs for a single user.
 #
 # Since we may call this function either before or after Duo
 # authentication, we have to actually parse the file again.  That is, we
@@ -100,7 +114,7 @@ def updateCache(username, ipaddress, action='add'):
             return False
 
     try:
-        tmpf = tempfile.NamedTemporaryFile(delete=False)
+        tmpf = tempfile.NamedTemporaryFile(dir='/var/tmp', delete=False)
         tmpf.write("".join(lines))
         tmpf.close()
     except OSError, e:
@@ -167,16 +181,16 @@ def log(msg):
     msg = 'Duo OpenVPN: %s' % msg
     syslog.syslog(msg)
 
-def success(control):
+def success(control, cache):
     log('writing success code to %s' % control)
-
     f = open(control, 'w')
     f.write('1')
     f.close()
 
-    common_name = os.environ.get('common_name')
-    ipaddr = os.environ.get('ipaddr', '0.0.0.0')
-    updateCache(common_name, ipaddr)
+    if cache:
+        common_name = os.environ.get('common_name')
+        ipaddr = os.environ.get('ipaddr', '0.0.0.0')
+        updateCache(common_name, ipaddr)
 
     sys.exit(0)
 
@@ -188,8 +202,7 @@ def failure(control):
     f.close()
 
     common_name = os.environ.get('username')
-    ipaddr = os.environ.get('ipaddr', '0.0.0.0')
-    updateCache(common_name, ipaddr, 'delete')
+    updateCache(common_name, None, 'delete')
 
     sys.exit(1)
 
@@ -227,7 +240,7 @@ def preauth(ikey, skey, host, control, username):
         failure(control)
     elif result == API_RESULT_ALLOW:
         log('preauth success for %s: %s' % (username, status))
-        success(control)
+        success(control, True)
     else:
         log('unknown preauth result: %s' % result)
         failure(control)
@@ -253,7 +266,7 @@ def auth(ikey, skey, host, control, username, password, ipaddr):
 
     if result == API_RESULT_ALLOW:
         log('auth success for %s: %s' % (username, status))
-        success(control)
+        success(control, True)
     elif result == API_RESULT_DENY:
         log('auth failure for %s: %s' % (username, status))
         failure(control)
@@ -296,7 +309,7 @@ def main():
 
     if cached(common_name, ipaddr):
         log("'%s,%s' found in cache, avoiding Duo authentication\n" % (common_name, ipaddr))
-        success(control)
+        success(control, False)
         # NOTREACHED
 
     try:
